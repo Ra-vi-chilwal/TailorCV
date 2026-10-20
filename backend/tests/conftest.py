@@ -22,7 +22,7 @@ class FakeEmbedder:
                 v[zlib.crc32(t[i:i + 3].encode()) % 256] += 1
             yield v
 
-
+//console.log()
 def make_pdf(text: str, pages: int = 1) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf)
