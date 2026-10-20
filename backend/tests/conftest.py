@@ -8,7 +8,7 @@ from reportlab.pdfgen import canvas
 
 from app import db, graph, scoring
 from app.core.config import settings
-from app.schemas import ExtractedJD, ExtractedResume, TailoredResume
+from app.schemas import ExperienceEntry, ExtractedJD, ExtractedResume, TailoredResume
 
 
 class FakeEmbedder:
@@ -22,7 +22,6 @@ class FakeEmbedder:
                 v[zlib.crc32(t[i:i + 3].encode()) % 256] += 1
             yield v
 
-//console.log()
 def make_pdf(text: str, pages: int = 1) -> bytes:
     buf = io.BytesIO()
     c = canvas.Canvas(buf)
@@ -63,7 +62,10 @@ def isolated(monkeypatch):
     monkeypatch.setattr(graph, "tailor_resume", lambda **kw: TailoredResume(
         summary="Backend developer building Python APIs.",
         skills=["Python", "FastAPI", "Docker", "Kubernetes"],
-        experience_bullets=["Built REST APIs with FastAPI serving 50 clients"]))
+        name="Asha Rao",
+        experience=[ExperienceEntry(title="Backend Developer", company="Acme", dates="2021-2022",
+                                    bullets=["Built REST APIs with FastAPI serving 50 clients"])],
+        education=["BSc Computer Science"]))
 
 
 @pytest.fixture

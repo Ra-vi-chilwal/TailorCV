@@ -61,18 +61,49 @@ class ExtractedJD(BaseModel):
 
 # ---------- Step 3: tailored resume (filled by llm.py) ----------
 
+class ExperienceEntry(BaseModel):
+    title: str = Field(default="", description="Job title, copied exactly from the resume.")
+    company: str = Field(default="", description="Company name, copied exactly from the resume.")
+    dates: str = Field(default="", description="Date range, copied exactly from the resume, e.g. 'Jan 2021 - Present'.")
+    bullets: list[str] = Field(default_factory=list, description="Achievements for this job, rewritten to fit the job description.")
+
+
+class ProjectEntry(BaseModel):
+    name: str = Field(default="", description="Project name, copied exactly from the resume.")
+    bullets: list[str] = Field(default_factory=list)
+
+
 class TailoredResume(BaseModel):
+    """What the LLM writes. Contact details are NOT here: we copy them from the PDF ourselves."""
+    name: str = Field(default="", description="Candidate's full name exactly as written in the resume. Empty if there is none.")
     summary: str
     skills: list[str]
-    experience_bullets: list[str]
+    experience: list[ExperienceEntry] = Field(default_factory=list, description="Every job in the resume, newest first.")
+    projects: list[ProjectEntry] = Field(default_factory=list, description="Every project in the resume.")
+    education: list[str] = Field(default_factory=list, description="Each degree/school line, copied exactly from the resume.")
+    other: list[str] = Field(default_factory=list, description="Certifications, awards or other lines, copied exactly.")
+
+    def bullet_lines(self) -> list[str]:
+        """Every free-text line the LLM wrote (used by the fact checker)."""
+        lines = [self.summary]
+        for job in self.experience:
+            lines += job.bullets
+        for proj in self.projects:
+            lines += proj.bullets
+        return lines
+
+
+class FinalResume(TailoredResume):
+    """The checked resume we show and turn into a PDF."""
+    contact: list[str] = Field(default_factory=list, max_length=10)
 
 
 class GuardrailReport(BaseModel):
     """What the fact-checker found in the tailored resume."""
     passed: bool
     removed_skills: list[str] = Field(default_factory=list)   # skills not backed by the resume
-    flagged_lines: list[str] = Field(default_factory=list)    # lines containing invented numbers
-    cleaned_resume: TailoredResume
+    flagged_lines: list[str] = Field(default_factory=list)    # lines containing invented numbers / companies
+    cleaned_resume: FinalResume
 
 
 # ---------- API responses ----------

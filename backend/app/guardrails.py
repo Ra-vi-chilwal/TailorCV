@@ -1,7 +1,7 @@
 import re
 
 from app.core.config import settings
-from app.schemas import GuardrailReport, TailoredResume
+from app.schemas import FinalResume, GuardrailReport, TailoredResume
 from app.scoring import clean_skills, sim_table
 
 # Finds numbers like 5, 40, 3.5 (after we remove commas, so "1,000" becomes "1000")
@@ -40,6 +40,32 @@ def find_invented_numbers(lines: list[str], original_text: str) -> list[str]:
     return flagged
 
 
+EMAIL = re.compile(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+")
+PHONE = re.compile(r"(?<!\w)\+?\d[\d\s().-]{8,16}\d(?!\w)")
+LINK = re.compile(r"(?:https?://|www\.)\S+|(?:linkedin\.com|github\.com)/\S+", re.I)
+
+
+def extract_contact(original_text: str) -> list[str]:
+    """Email, phone and links copied straight from the resume text. No LLM, so nothing can be invented."""
+    found: list[str] = []
+    for pattern in (EMAIL, PHONE, LINK):
+        for m in pattern.findall(original_text):
+            m = m.strip().rstrip(".,;)")
+            if m and m not in found:
+                found.append(m)
+    return found[:6]
+
+
+def _norm(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", " ", text.lower()).strip()
+
+
+def find_unknown_names(names: list[str], original_text: str) -> list[str]:
+    """Company / school / project names that never appear in the original resume."""
+    original = _norm(original_text)
+    return [n for n in names if n.strip() and _norm(n) not in original]
+
+
 def validate_confirmed_skills(confirmed: list[str], missing: list[str]) -> list[str]:
     """Keep only confirmed skills that were actually in the 'missing' list we showed."""
     missing_lower = {m.lower() for m in missing}
@@ -58,11 +84,18 @@ def check_tailored_resume(
     invented_lower = {s.lower() for s in invented}
 
     kept_skills = [s for s in tailored.skills if s.strip().lower() not in invented_lower]
+    dates = [j.dates for j in tailored.experience]
     flagged = find_invented_numbers(
-        [tailored.summary, *tailored.experience_bullets], original_text
+        [*tailored.bullet_lines(), *dates, *tailored.education], original_text
     )
+    names = [j.company for j in tailored.experience] + [p.name for p in tailored.projects]
+    flagged += [f"Not found in your resume: {n}" for n in find_unknown_names(names, original_text)]
 
-    cleaned = tailored.model_copy(update={"skills": kept_skills})
+    cleaned = FinalResume(
+        **tailored.model_dump(exclude={"skills"}),
+        skills=kept_skills,
+        contact=extract_contact(original_text),
+    )
 
     return GuardrailReport(
         passed=not invented and not flagged,

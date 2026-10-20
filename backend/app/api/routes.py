@@ -1,9 +1,10 @@
 """HTTP layer only: read the request, call a service, return the response."""
-from fastapi import APIRouter, File, Form, Request, UploadFile
+from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from app.core.config import settings
 from app.core.limits import client_id
-from app.schemas import AnalyzeResponse, ConfirmSkillsRequest, TailorResponse
+from app.pdf_export import build_resume_pdf
+from app.schemas import AnalyzeResponse, ConfirmSkillsRequest, FinalResume, TailorResponse
 from app.services import resume_service
 
 # All API routes live under /api, so the React app (served from "/") and the API share one address.
@@ -48,3 +49,13 @@ def analyze(
 @router.post("/tailor", response_model=TailorResponse)
 def tailor(request: Request, body: ConfirmSkillsRequest):
     return resume_service.tailor_resume_for_session(body, client=client_id(request))
+
+
+@router.post("/resume-pdf")
+def resume_pdf(body: FinalResume):
+    """Turn the tailored resume the UI already has into a PDF. No LLM call, so it costs no tokens."""
+    return Response(
+        content=build_resume_pdf(body),
+        media_type="application/pdf",
+        headers={"Content-Disposition": 'attachment; filename="tailored_resume.pdf"'},
+    )

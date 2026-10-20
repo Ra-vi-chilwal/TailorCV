@@ -4,7 +4,7 @@ import {
   AlertCircle, ArrowLeft, Clock, Copy, Info, ArrowRight, Check, CheckCircle2, CircleDashed, Download, FileText, Loader2, PartyPopper, RotateCcw,
   ShieldAlert, ShieldCheck, Sparkles, Target, UploadCloud, Wand2, XCircle,
 } from "lucide-react";
-import { analyze, ApiError, getLimits, tailor, type AnalyzeResponse, type Limits, type TailorResponse } from "../api";
+import { analyze, ApiError, getLimits, resumePdf, tailor, type AnalyzeResponse, type Limits, type TailorResponse } from "../api";
 import ScoreRing from "./ScoreRing";
 import { GlowCard, Reveal } from "./ui";
 import { markTailored, saveAnalysis } from "../history";
@@ -145,15 +145,40 @@ export default function Tool() {
     if (f) setFile(f);
   };
 
-  const asText = (f: TailorResponse) =>
-    `SUMMARY\n${f.resume.summary}\n\nSKILLS\n${f.resume.skills.join(", ")}\n\nEXPERIENCE HIGHLIGHTS\n${f.resume.bullets.map((b) => "- " + b).join("\n")}\n`;
+  const asText = (f: TailorResponse) => {
+    const r = f.resume;
+    const out: string[] = [];
+    if (r.name) out.push(r.name);
+    if (r.contact.length) out.push(r.contact.join(" | "));
+    out.push("", "SUMMARY", r.summary, "", "SKILLS", r.skills.join(", "));
+    if (r.experience.length) {
+      out.push("", "EXPERIENCE");
+      r.experience.forEach((j) => out.push([j.title, j.company].filter(Boolean).join(" - ") + (j.dates ? `  (${j.dates})` : ""), ...j.bullets.map((b) => "- " + b), ""));
+    }
+    if (r.projects.length) {
+      out.push("PROJECTS");
+      r.projects.forEach((p) => out.push(p.name, ...p.bullets.map((b) => "- " + b), ""));
+    }
+    if (r.education.length) out.push("EDUCATION", ...r.education, "");
+    if (r.other.length) out.push("OTHER", ...r.other.map((o) => "- " + o), "");
+    return out.join("\n");
+  };
   const copyText = async (f: TailorResponse) => {
     try { await navigator.clipboard.writeText(asText(f)); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch { /* clipboard blocked */ }
   };
-  const saveText = (f: TailorResponse) => {
-    const url = URL.createObjectURL(new Blob([asText(f)], { type: "text/plain" }));
-    Object.assign(document.createElement("a"), { href: url, download: "tailored_resume.txt" }).click();
-    URL.revokeObjectURL(url);
+  const [pdfBusy, setPdfBusy] = useState(false);
+  const [pdfErr, setPdfErr] = useState("");
+  const savePdf = async (f: TailorResponse) => {
+    setPdfBusy(true); setPdfErr("");
+    try {
+      const url = URL.createObjectURL(await resumePdf(f.resume));
+      Object.assign(document.createElement("a"), { href: url, download: "tailored_resume.pdf" }).click();
+      URL.revokeObjectURL(url);
+    } catch (e) {
+      setPdfErr(e instanceof ApiError ? e.message : "Could not create the PDF. Please try again.");
+    } finally {
+      setPdfBusy(false);
+    }
   };
 
   const report = result?.report;
@@ -333,7 +358,7 @@ export default function Tool() {
                       <h2><span className="ico green"><CheckCircle2 size={22} /></span> Your tailored resume</h2>
                       <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
                         <button className="btn ghost" onClick={() => copyText(final)}>{copied ? <><Check size={16} /> Copied</> : <><Copy size={16} /> Copy text</>}</button>
-                        <button className="btn" onClick={() => saveText(final)}><Download size={16} /> Download .txt</button>
+                        <button className="btn" disabled={pdfBusy} onClick={() => savePdf(final)}><Download size={16} /> {pdfBusy ? "Creating PDF..." : "Download PDF"}</button>
                       </div>
                     </div>
                     {(!final.verified || final.removed_skills.length > 0) && (
@@ -345,13 +370,30 @@ export default function Tool() {
                         </span>
                       </div>
                     )}
+                    {pdfErr && <div className="alert" role="alert"><AlertCircle size={18} /><span>{pdfErr}</span></div>}
                     <div className="paper">
-                      <h4 style={{ marginTop: 0 }}>Summary</h4>
+                      {final.resume.name && <h3>{final.resume.name}</h3>}
+                      {final.resume.contact.length > 0 && <div className="contact">{final.resume.contact.join("  |  ")}</div>}
+                      <h4>Summary</h4>
                       <p>{final.resume.summary}</p>
                       <h4>Skills</h4>
                       <div className="chips">{final.resume.skills.map((s) => <span key={s}>{s}</span>)}</div>
-                      <h4>Experience highlights</h4>
-                      <ul>{final.resume.bullets.map((b, i) => <li key={i} className={final.flagged_lines.includes(b) ? "flag" : ""}>{b}</li>)}</ul>
+                      {final.resume.experience.length > 0 && <h4>Experience</h4>}
+                      {final.resume.experience.map((j, i) => (
+                        <div className="job" key={i}>
+                          <b>{[j.title, j.company].filter(Boolean).join(" - ")}</b> <small>{j.dates}</small>
+                          <ul>{j.bullets.map((b, k) => <li key={k} className={final.flagged_lines.includes(b) ? "flag" : ""}>{b}</li>)}</ul>
+                        </div>
+                      ))}
+                      {final.resume.projects.length > 0 && <h4>Projects</h4>}
+                      {final.resume.projects.map((p, i) => (
+                        <div className="job" key={i}>
+                          <b>{p.name}</b>
+                          <ul>{p.bullets.map((b, k) => <li key={k} className={final.flagged_lines.includes(b) ? "flag" : ""}>{b}</li>)}</ul>
+                        </div>
+                      ))}
+                      {final.resume.education.length > 0 && <><h4>Education</h4>{final.resume.education.map((e, i) => <p key={i} style={{ margin: "2px 0" }}>{e}</p>)}</>}
+                      {final.resume.other.length > 0 && <><h4>Other</h4><ul>{final.resume.other.map((o, i) => <li key={i}>{o}</li>)}</ul></>}
                     </div>
                     <div className="actions">
                       <button className="btn ghost" onClick={reset}><RotateCcw size={16} /> Try another job</button>

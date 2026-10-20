@@ -21,10 +21,19 @@ export interface AnalyzeResponse {
   report: Report;
 }
 
+export interface Job { title: string; company: string; dates: string; bullets: string[] }
+export interface Project { name: string; bullets: string[] }
+
+/** Same shape as the backend's FinalResume, so it can be sent straight back to build the PDF. */
 export interface TailoredResume {
+  name: string;
+  contact: string[];
   summary: string;
   skills: string[];
-  bullets: string[];
+  experience: Job[];
+  projects: Project[];
+  education: string[];
+  other: string[];
 }
 
 export interface TailorResponse {
@@ -109,7 +118,7 @@ interface RawTailor {
   attempts: number;
   report: {
     passed: boolean; removed_skills: string[]; flagged_lines: string[];
-    cleaned_resume: { summary: string; skills: string[]; experience_bullets: string[] };
+    cleaned_resume: TailoredResume;
   };
 }
 
@@ -119,15 +128,26 @@ export async function tailor(sessionId: string, skills: string[]): Promise<Tailo
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ session_id: sessionId, confirmed_skills: skills }),
   });
-  const c = raw.report.cleaned_resume;
   return {
     thread_id: sessionId,
     attempts: raw.attempts,
     verified: raw.report.passed,
     removed_skills: raw.report.removed_skills,
     flagged_lines: raw.report.flagged_lines,
-    resume: { summary: c.summary, skills: c.skills, bullets: c.experience_bullets },
+    resume: raw.report.cleaned_resume,
   };
+}
+
+/** Ask the server to draw the resume as a PDF (no AI call, so no tokens). */
+export async function resumePdf(resume: TailoredResume): Promise<Blob> {
+  let res: Response;
+  try {
+    res = await fetch("/api/resume-pdf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(resume) });
+  } catch {
+    throw new ApiError(NETWORK, 0);
+  }
+  if (!res.ok) throw new ApiError(`Could not create the PDF (${res.status}). Please try again.`, res.status);
+  return res.blob();
 }
 
 export const getLimits = () => request<Limits>("/api/limits");

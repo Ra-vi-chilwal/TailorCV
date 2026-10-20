@@ -134,3 +134,28 @@ def test_unexpected_error_hides_details(client, pdf, monkeypatch):
 def test_health_and_limits(client):
     assert client.get("/api/health").json() == {"status": "ok"}
     assert client.get("/api/limits").json()["max_upload_mb"] == settings.max_upload_mb
+
+
+def test_full_resume_has_contact_and_checked_companies():
+    from app.guardrails import check_tailored_resume
+    from app.schemas import ExperienceEntry, TailoredResume
+    original = "Asha Rao asha@example.com +91 98765 43210 linkedin.com/in/asha\nAcme 2021-2022 built APIs"
+    t = TailoredResume(
+        name="Asha Rao", summary="Dev.", skills=["Python"],
+        experience=[ExperienceEntry(title="Dev", company="Acme", dates="2021-2022", bullets=["Built APIs"]),
+                    ExperienceEntry(title="Lead", company="Google", dates="2025", bullets=[])])
+    rep = check_tailored_resume(t, original, ["Python"], [])
+    c = rep.cleaned_resume.contact
+    assert "asha@example.com" in c and any("98765" in x for x in c) and any("linkedin.com" in x for x in c)
+    assert any("Google" in line for line in rep.flagged_lines)        # invented company is caught
+    assert not any("Acme" in line for line in rep.flagged_lines)      # real one is fine
+    assert not rep.passed
+
+
+def test_resume_pdf_endpoint(client):
+    body = {"name": "Asha Rao", "summary": "Dev & <b>builder</b>.", "skills": ["Python"], "contact": ["a@b.co"],
+            "experience": [{"title": "Dev", "company": "Acme", "dates": "2021-2022", "bullets": ["Built APIs"]}],
+            "education": ["BSc"]}
+    r = client.post("/api/resume-pdf", json=body)
+    assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
+    assert r.content.startswith(b"%PDF-")
