@@ -159,3 +159,12 @@ def test_resume_pdf_endpoint(client):
     r = client.post("/api/resume-pdf", json=body)
     assert r.status_code == 200 and r.headers["content-type"] == "application/pdf"
     assert r.content.startswith(b"%PDF-")
+
+
+def test_pdf_cleans_odd_characters_and_names_the_file(client):
+    from app.pdf_export import _safe, pdf_filename
+    from app.schemas import FinalResume
+    assert _safe("real‑time auto‑reply") == "real-time auto-reply"
+    assert pdf_filename(FinalResume(name="Ravindar Chilwal", summary="x", skills=[])) == "Ravindar_Chilwal_Resume.pdf"
+    r = client.post("/api/resume-pdf", json={"name": "Ravindar Chilwal", "summary": "x", "skills": []})
+    assert 'filename="Ravindar_Chilwal_Resume.pdf"' in r.headers["content-disposition"]

@@ -171,8 +171,9 @@ export default function Tool() {
   const savePdf = async (f: TailorResponse) => {
     setPdfBusy(true); setPdfErr("");
     try {
-      const url = URL.createObjectURL(await resumePdf(f.resume));
-      Object.assign(document.createElement("a"), { href: url, download: "tailored_resume.pdf" }).click();
+      const { blob, filename } = await resumePdf(f.resume);
+      const url = URL.createObjectURL(blob);
+      Object.assign(document.createElement("a"), { href: url, download: filename }).click();
       URL.revokeObjectURL(url);
     } catch (e) {
       setPdfErr(e instanceof ApiError ? e.message : "Could not create the PDF. Please try again.");

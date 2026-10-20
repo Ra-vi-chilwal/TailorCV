@@ -139,7 +139,7 @@ export async function tailor(sessionId: string, skills: string[]): Promise<Tailo
 }
 
 /** Ask the server to draw the resume as a PDF (no AI call, so no tokens). */
-export async function resumePdf(resume: TailoredResume): Promise<Blob> {
+export async function resumePdf(resume: TailoredResume): Promise<{ blob: Blob; filename: string }> {
   let res: Response;
   try {
     res = await fetch("/api/resume-pdf", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(resume) });
@@ -147,7 +147,8 @@ export async function resumePdf(resume: TailoredResume): Promise<Blob> {
     throw new ApiError(NETWORK, 0);
   }
   if (!res.ok) throw new ApiError(`Could not create the PDF (${res.status}). Please try again.`, res.status);
-  return res.blob();
+  const filename = /filename="([^"]+)"/.exec(res.headers.get("content-disposition") ?? "")?.[1] ?? "Tailored_Resume.pdf";
+  return { blob: await res.blob(), filename };
 }
 
 export const getLimits = () => request<Limits>("/api/limits");

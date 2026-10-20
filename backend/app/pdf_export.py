@@ -1,4 +1,5 @@
 import io
+import re
 from xml.sax.saxutils import escape
 
 from reportlab.lib import colors
@@ -9,9 +10,29 @@ from reportlab.platypus import HRFlowable, ListFlowable, ListItem, Paragraph, Si
 
 from app.schemas import FinalResume
 
+# The built-in PDF fonts only know Windows-1252 characters. Anything else is drawn as a black square.
+# So swap look-alike characters for plain ones first, then drop what still cannot be drawn.
+_LOOKALIKES = str.maketrans({
+    "‐": "-", "‑": "-", "‒": "-", "−": "-",                                  # special hyphens / minus
+    " ": " ", " ": " ", " ": " ", " ": " ", " ": " ", "​": "",     # odd spaces
+    "●": "-", "▪": "-", "→": "->", "✓": "",                                  # bullets, arrow, tick
+})
+
+
+def _safe(text: str) -> str:
+    text = text.translate(_LOOKALIKES)
+    return text.encode("cp1252", errors="ignore").decode("cp1252")
+
 
 def _p(text: str, style: ParagraphStyle) -> Paragraph:
-    return Paragraph(escape(text), style)       # escape(): reportlab reads <b>, & etc. as markup
+    return Paragraph(escape(_safe(text)), style)   # escape(): reportlab reads <b>, & etc. as markup
+
+
+def pdf_filename(r: FinalResume) -> str:
+    """'Ravindar_Chilwal_Resume.pdf'. Falls back to the newest job title, then a plain name."""
+    base = r.name or (r.experience[0].title if r.experience else "")
+    base = re.sub(r"[^A-Za-z0-9]+", "_", _safe(base)).strip("_")[:60]
+    return f"{base}_Resume.pdf" if base else "Tailored_Resume.pdf"
 
 
 def build_resume_pdf(r: FinalResume) -> bytes:
@@ -59,5 +80,5 @@ def build_resume_pdf(r: FinalResume) -> bytes:
 
     buf = io.BytesIO()
     SimpleDocTemplate(buf, pagesize=A4, leftMargin=18 * mm, rightMargin=18 * mm, topMargin=16 * mm,
-                      bottomMargin=16 * mm, title=r.name or "Tailored resume").build(story)
+                      bottomMargin=16 * mm, title=_safe(r.name) or "Tailored resume").build(story)
     return buf.getvalue()

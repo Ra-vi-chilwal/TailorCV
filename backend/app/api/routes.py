@@ -3,7 +3,7 @@ from fastapi import APIRouter, File, Form, Request, Response, UploadFile
 
 from app.core.config import settings
 from app.core.limits import client_id
-from app.pdf_export import build_resume_pdf
+from app.pdf_export import build_resume_pdf, pdf_filename
 from app.schemas import AnalyzeResponse, ConfirmSkillsRequest, FinalResume, TailorResponse
 from app.services import resume_service
 
@@ -57,5 +57,5 @@ def resume_pdf(body: FinalResume):
     return Response(
         content=build_resume_pdf(body),
         media_type="application/pdf",
-        headers={"Content-Disposition": 'attachment; filename="tailored_resume.pdf"'},
+        headers={"Content-Disposition": f'attachment; filename="{pdf_filename(body)}"'},
     )
